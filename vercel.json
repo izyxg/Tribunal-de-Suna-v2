@@ -1,5 +1,9 @@
 {
-  "cleanUrls": true,
+  "cleanUrls": false,
+  "redirects": [
+    { "source": "/invite/:token", "destination": "/?invite=:token", "permanent": false },
+    { "source": "/i/:token", "destination": "/?invite=:token", "permanent": false }
+  ],
   "rewrites": [
     { "source": "/invite/:token", "destination": "/index.html" },
     { "source": "/i/:token", "destination": "/index.html" }
