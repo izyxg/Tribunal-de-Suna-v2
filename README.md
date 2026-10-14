@@ -10,7 +10,7 @@ Cette version n'utilise plus `localStorage` comme base principale. Toutes les do
 - Initialisation du gérant persistante : elle reste après redémarrage/redéploiement.
 - Sessions avec cookie HTTP-only.
 - Mots de passe protégés avec PBKDF2 + sel unique.
-- Système d'invitation par lien : `/invite/<token>`.
+- Système d'invitation par lien : `/invite/<token>` et `/i/<token>`.
 - Tokens d'invitation stockés uniquement sous forme hashée en base.
 - Permissions serveur par grade, pas seulement masquées côté interface.
 - Audit des actions sensibles.
@@ -46,6 +46,14 @@ Au premier lancement avec une base vide, l'application affiche l'écran d'initia
 ### Invitations
 
 Un gérant ou co-gérant peut aller dans l'onglet `Invitations`, choisir un grade, puis générer un lien. Le joueur reçoit le lien, choisit son mot de passe et son compte est créé.
+
+Formats supportés :
+
+- `/invite/<token>`
+- `/i/<token>`
+- `/?invite=<token>`
+
+Le lien n'est affiché qu'au moment de sa création. Si tu le perds, révoque l'invitation et génère un nouveau lien.
 
 Un co-gérant ne peut pas créer de gérant ni de co-gérant. Le gérant reste le seul rôle maximal.
 
