@@ -1,51 +1,70 @@
-# Tribunal de Suna — Justice
+# Tribunal de Sunagakure v2
 
-Application web statique pour gérer un tribunal RP Naruto : membres, grades, trésorerie, jugements, tâches et audit.
+Application RP pour gérer le tribunal : membres, rôles, liens d'invitation, trésorerie, jugements, tâches et audit.
 
-## Améliorations ajoutées
+Cette version n'utilise plus `localStorage` comme base principale. Toutes les données importantes sont enregistrées dans PostgreSQL via les fonctions API Vercel.
 
-- Login propre avec identifiants uniques.
-- Premier démarrage avec création du compte **Gérant**.
-- Activation des membres par **code d'invitation**.
-- Mots de passe protégés côté navigateur avec **PBKDF2 + sel unique** via Web Crypto.
-- Blocage temporaire après trop de tentatives de connexion.
-- Sessions limitées à 8 heures via `sessionStorage`.
-- Rôles et permissions : Gérant, Co-gérant, Magistrat, Greffier, Procureur, Avocat, Auditeur.
+## Ce qui a changé
+
+- Backend Vercel `/api` relié à PostgreSQL.
+- Initialisation du gérant persistante : elle reste après redémarrage/redéploiement.
+- Sessions avec cookie HTTP-only.
+- Mots de passe protégés avec PBKDF2 + sel unique.
+- Système d'invitation par lien : `/invite/<token>`.
+- Tokens d'invitation stockés uniquement sous forme hashée en base.
+- Permissions serveur par grade, pas seulement masquées côté interface.
 - Audit des actions sensibles.
-- Export / import JSON pour sauvegarder les données.
-- Interface séparée en fichiers `index.html`, `assets/styles.css`, `assets/app.js`.
-- Optimisation : plus de gros fichier unique, script différé, CSS séparé, rendu plus clair.
+- Export JSON réservé au gérant.
+- Interface refaite et plus responsive.
 
-## Lancer en local
+## Variables d'environnement Vercel
 
-Ouvre le dossier avec VS Code, puis lance Live Server sur `index.html`.
+Dans Vercel, ajoute une variable d'environnement en Production, Preview et Development :
 
-Tu peux aussi ouvrir directement `index.html`, mais le hash sécurisé des mots de passe demande un contexte sécurisé. Utilise de préférence :
+```txt
+DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DB?sslmode=require
+```
 
-- `https://` en ligne ;
-- ou `localhost` en développement.
+Le code accepte aussi `POSTGRES_URL`, `POSTGRES_PRISMA_URL` ou `POSTGRES_URL_NON_POOLING`, mais `DATABASE_URL` est recommandé.
+
+Ne mets jamais l'URL PostgreSQL dans le frontend. Elle doit rester dans les variables d'environnement Vercel.
 
 ## Déploiement Vercel
 
-Framework preset : **Other**
+1. Pousse le repo sur GitHub.
+2. Importe le repo dans Vercel.
+3. Ajoute la variable `DATABASE_URL` dans les Environment Variables.
+4. Redéploie.
+5. Ouvre le site : la première page demande de créer le compte Gérant.
 
-Aucune commande de build nécessaire.
+## Utilisation
 
-## Important sécurité
+### Première connexion
 
-Cette version améliore fortement le login par rapport à un simple mot de passe en clair ou hash simple, mais le projet reste une application statique. Les données sont stockées dans le navigateur avec `localStorage`.
+Au premier lancement avec une base vide, l'application affiche l'écran d'initialisation. Le premier compte créé devient automatiquement `Gérant`.
 
-Pour un vrai usage multi-utilisateur partagé entre plusieurs personnes, il faudra ajouter un backend et une base de données serveur, par exemple :
+### Invitations
 
-- Next.js + API routes ;
-- Prisma + PostgreSQL ;
-- Auth serveur avec cookies HttpOnly ;
-- rôles vérifiés côté serveur.
+Un gérant ou co-gérant peut aller dans l'onglet `Invitations`, choisir un grade, puis générer un lien. Le joueur reçoit le lien, choisit son mot de passe et son compte est créé.
 
-Cette version est donc parfaite pour un registre local ou une base à déployer rapidement, mais pas pour protéger des données sensibles réelles.
+Un co-gérant ne peut pas créer de gérant ni de co-gérant. Le gérant reste le seul rôle maximal.
 
-## Migration depuis l'ancienne version
+### Trésorerie
 
-Au premier lancement, l'application essaie de récupérer les anciennes clés `tsr_members`, `tsr_treasury`, `tsr_judgments` et `tsr_tasks` si elles existent dans le navigateur.
+Les dépôts ajoutent automatiquement 10 % en commission/paye du membre et 90 % au trésor. Les retraits sont réservés aux rôles de gestion.
 
-Les anciens mots de passe sont migrés automatiquement vers PBKDF2 après une connexion réussie.
+## Développement local
+
+Installe les dépendances :
+
+```bash
+npm install
+```
+
+Crée un fichier `.env` ou lance avec une variable d'environnement :
+
+```bash
+DATABASE_URL="postgresql://USER:PASSWORD@HOST:PORT/DB?sslmode=require" npx vercel dev
+```
+
+Puis ouvre l'URL indiquée par Vercel.
