@@ -1,0 +1,16 @@
+{
+  "name": "tribunal-de-suna-v2",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Tribunal de Sunagakure avec API Vercel et PostgreSQL.",
+  "scripts": {
+    "dev": "vercel dev",
+    "start": "vercel dev"
+  },
+  "dependencies": {
+    "pg": "^8.13.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
