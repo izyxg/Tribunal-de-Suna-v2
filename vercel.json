@@ -1,7 +1,8 @@
 {
   "cleanUrls": true,
   "rewrites": [
-    { "source": "/invite/:token", "destination": "/index.html" }
+    { "source": "/invite/:token", "destination": "/index.html" },
+    { "source": "/i/:token", "destination": "/index.html" }
   ],
   "headers": [
     {
