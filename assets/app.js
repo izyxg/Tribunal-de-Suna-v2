@@ -1,57 +1,183 @@
-(()=>{
-'use strict';
-const DB='tribunal-suna-v2',SES='tribunal-suna-session-v2',THEME='tribunal-suna-theme',ITER=180000,SESSION_MS=8*60*60*1000;
-const GR=['Gérant','Co-gérant','Magistrat','Greffier','Procureur','Avocat','Auditeur'];
-const ROLE={'Gérant':'admin','Co-gérant':'coadmin','Magistrat':'staff','Greffier':'staff','Procureur':'staff','Avocat':'staff','Auditeur':'auditor'};
-const V=[['dashboard','🪪 Profil'],['treasury','💰 Trésorerie'],['cases','⚖️ Jugements'],['tasks','📜 Tâches'],['members','👥 Membres'],['admin','🛡️ Administration']];
-const $=id=>document.getElementById(id),qs=(s,r=document)=>[...r.querySelectorAll(s)],uid=()=>crypto.randomUUID?crypto.randomUUID():Date.now()+Math.random().toString(36),now=()=>Date.now();
-const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const clean=v=>String(v??'').trim().replace(/\s+/g,' '),norm=v=>clean(v).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'.').replace(/^\.|\.$/g,'');
-const money=n=>`${Number(n||0).toLocaleString('fr-FR')} Ryō`,date=n=>n?new Date(n).toLocaleString('fr-FR',{dateStyle:'short',timeStyle:'short'}):'—';
-const fd=f=>Object.fromEntries(new FormData(f).entries());
-let S={db:load(),me:null,view:'dashboard',search:'',lastInvite:null};
-function load(){try{let d=JSON.parse(localStorage.getItem(DB)||'null');if(d&&d.version===2)return d}catch(e){}return{version:2,createdAt:now(),users:[],treasury:[],cases:[],tasks:[],audit:[]}}
-function save(){S.db.updatedAt=now();localStorage.setItem(DB,JSON.stringify(S.db))}
-function audit(a){S.db.audit.unshift({id:uid(),at:now(),by:S.me?name(user()):'system',action:a});S.db.audit=S.db.audit.slice(0,150)}
-function name(u){return u?[u.prenom,u.nom].filter(Boolean).join(' ')||u.username:'—'}
-function user(){return S.me?S.db.users.find(u=>u.id===S.me.id&&u.status==='active'):null}
-function can(p){let u=user();if(!u)return false;if(u.role==='admin')return true;if(p==='users')return u.role==='coadmin';if(p==='withdraw')return u.role==='coadmin';if(p==='case')return u.role!=='auditor';return true}
-function hex(b){return[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')}
-function rand(n=16){let a=new Uint8Array(n);crypto.getRandomValues(a);return hex(a)}
-async function hash(p,s,it=ITER){let k=await crypto.subtle.importKey('raw',new TextEncoder().encode(p),'PBKDF2',false,['deriveBits']);let b=await crypto.subtle.deriveBits({name:'PBKDF2',salt:new TextEncoder().encode(s),iterations:it,hash:'SHA-256'},k,256);return hex(b)}
-async function pass(p){let salt=rand(16);return{salt,passHash:await hash(p,salt),iterations:ITER}}
-function code(){let a='ABCDEFGHJKLMNPQRSTUVWXYZ23456789',r=new Uint8Array(12);crypto.getRandomValues(r);return[...r].map((v,i)=>(i&&i%4===0?'-':'')+a[v%a.length]).join('')}
-function msg(id,t,ok=false){let e=$(id);if(e){e.textContent=t||'';e.classList.toggle('ok',ok)}}
-function session(u){S.me=u?{id:u.id}:null;u?sessionStorage.setItem(SES,JSON.stringify({id:u.id,exp:now()+SESSION_MS})):sessionStorage.removeItem(SES)}
-function restore(){try{let s=JSON.parse(sessionStorage.getItem(SES)||'null');if(!s||s.exp<now())return session(null);let u=S.db.users.find(x=>x.id===s.id&&x.status==='active');if(u)S.me={id:u.id}}catch(e){}}
-function secure(){return !!(crypto&&crypto.subtle&&window.isSecureContext)}
-function bal(){return S.db.treasury.reduce((s,x)=>s+(x.type==='deposit'?(x.net??x.amount):-x.amount),0)}
-function pay(id){return S.db.treasury.reduce((s,x)=>s+(x.type==='deposit'&&x.memberId===id?(x.commission||0):0),0)}
-function setupAuth(){let has=S.db.users.some(u=>u.role==='admin');$('setupPanel').hidden=has;$('loginPanel').hidden=!has;$('authIntro').textContent=has?'Connexion sécurisée au registre du tribunal.':'Aucun gérant trouvé : initialise le registre.'}
-function render(){let u=user();if(!u){S.me=null;$('authScreen').hidden=false;$('app').hidden=true;setupAuth();return}$('authScreen').hidden=true;$('app').hidden=false;$('sessionBadge').innerHTML=`<strong>${esc(name(u))}</strong><span class="pill">${esc(u.grade)}</span>`;let views=V.filter(([id])=>id==='members'?can('users'):id==='admin'?u.role==='admin':true);if(!views.some(x=>x[0]===S.view))S.view='dashboard';$('tabs').innerHTML=views.map(([id,l])=>`<button class="tab ${S.view===id?'on':''}" data-view="${id}">${l}</button>`).join('');qs('.view').forEach(e=>e.hidden=e.id!==`view-${S.view}`);dash(u);treasury(u);cases(u);tasks(u);if(can('users'))members();if(u.role==='admin')admin()}
-function stat(l,v){return`<div class="stat"><span>${esc(l)}</span><b>${esc(v)}</b></div>`}
-function dash(u){let mt=S.db.tasks.filter(t=>t.memberId===u.id||t.byId===u.id).length,mc=S.db.cases.filter(c=>c.byId===u.id).length;$('view-dashboard').innerHTML=`<h2>Mon profil</h2><div class="grid">${stat('Nom',name(u))}${stat('Grade',u.grade)}${stat('Paye',money(pay(u.id)))}${stat('Tâches',mt)}${stat('Jugements saisis',mc)}${stat('Dernière connexion',date(u.lastLoginAt))}</div><h3>Sécurité</h3><button class="ghost" data-modal="password">Changer mon mot de passe</button><form id="passwordForm" class="stack" hidden><label>Ancien mot de passe<input name="old" type="password" required></label><label>Nouveau<input name="password" type="password" minlength="8" required></label><label>Confirmer<input name="confirm" type="password" minlength="8" required></label><button class="primary">Modifier</button><p id="passwordMsg" class="form-msg"></p></form>`}
-function members(){let q=norm(S.search),list=S.db.users.filter(u=>!q||norm(name(u)+' '+u.username+' '+u.grade).includes(q)).sort((a,b)=>GR.indexOf(a.grade)-GR.indexOf(b.grade));$('view-members').innerHTML=`<h2>Membres</h2><form id="memberForm" class="row"><label>Identifiant<input name="username" placeholder="prenom.nom"></label><label>Prénom<input name="prenom" required></label><label>Nom<input name="nom" required></label><label>Grade<select name="grade">${GR.filter(g=>can('admin')||!['Gérant','Co-gérant'].includes(g)).map(g=>`<option>${g}</option>`).join('')}</select></label><button class="primary">Créer invitation</button><p id="memberMsg" class="form-msg"></p></form>${S.lastInvite?`<div class="notice"><b>Dernier code :</b> <span class="code">${esc(S.lastInvite.code)}</span><br><small>${esc(S.lastInvite.for)}</small></div>`:''}<div class="toolbar"><input id="searchUsers" placeholder="Rechercher" value="${esc(S.search)}"></div><div class="list">${list.map(u=>`<div class="item"><div><b>${esc(name(u))}</b><span class="pill">${esc(u.grade)}</span><small>@${esc(u.username)} · ${esc(u.status)}</small><small>Paye : ${money(pay(u.id))}</small></div><div class="actions">${u.status==='pending'?`<button class="ghost" data-action="regenInvite" data-id="${u.id}">Code</button>`:''}<button class="ghost" data-action="resetPass" data-id="${u.id}">Reset mdp</button><button class="ghost danger" data-action="toggleUser" data-id="${u.id}">${u.status==='disabled'?'Réactiver':'Désactiver'}</button></div></div>`).join('')||'<p class="empty">Aucun membre.</p>'}</div>`}
-function treasury(u){let ops=[...S.db.treasury].sort((a,b)=>b.at-a.at);$('view-treasury').innerHTML=`<h2>Trésorerie</h2><div class="balance"><span>Solde</span><b>${money(bal())}</b></div><form id="treasuryForm" class="row"><label>Type<select name="type"><option value="deposit">Dépôt</option>${can('withdraw')?'<option value="withdraw">Retrait</option>':''}</select></label><label>Montant<input name="amount" type="number" min="1" required></label><label>Motif<input name="note"></label><button class="primary">Enregistrer</button><p id="treasuryMsg" class="form-msg"></p></form><div class="list">${ops.map(o=>`<div class="item"><div><b class="${o.type==='deposit'?'good':'bad'}">${o.type==='deposit'?'+':'−'} ${money(o.amount)}</b><small>${esc(o.note||'Sans motif')} · ${esc(o.by)} · ${date(o.at)}</small>${o.commission?`<small>Commission paye : ${money(o.commission)}</small>`:''}</div>${can('admin')?`<button class="ghost danger" data-action="deleteTreasury" data-id="${o.id}">Supprimer</button>`:''}</div>`).join('')||'<p class="empty">Aucune opération.</p>'}</div>`}
-function cases(u){let list=[...S.db.cases].sort((a,b)=>(b.day||'').localeCompare(a.day||''));$('view-cases').innerHTML=`<h2>Jugements</h2>${can('case')?`<form id="caseForm" class="stack"><div class="row"><label>Affaire<input name="title" required></label><label>Date<input name="day" type="date" required></label><label>Accusé<input name="accused" required></label><label>Verdict<select name="verdict"><option>En cours</option><option>Coupable</option><option>Non coupable</option><option>Relaxé</option><option>Renvoyé</option></select></label><label>Juge<input name="judge" required></label><label>Procureur<input name="prosecutor"></label><label>Avocat<input name="lawyer"></label></div><label>Chefs d'accusation<input name="charges"></label><label>Notes<textarea name="notes"></textarea></label><button class="primary">Créer jugement</button></form>`:'<p class="notice">Lecture seule.</p>'}<div class="list">${list.map(c=>`<div class="item"><div><b>${esc(c.title)}</b><span class="pill ${c.verdict==='Coupable'?'bad':c.verdict==='Non coupable'||c.verdict==='Relaxé'?'good':'warn'}">${esc(c.verdict)}</span><small>${esc(c.day)} · Accusé : ${esc(c.accused)} · Juge : ${esc(c.judge)}</small>${c.charges?`<small>Charges : ${esc(c.charges)}</small>`:''}${c.notes?`<small>${esc(c.notes)}</small>`:''}<small>Saisi par ${esc(c.by)}</small></div>${can('admin')?`<button class="ghost danger" data-action="deleteCase" data-id="${c.id}">Supprimer</button>`:''}</div>`).join('')||'<p class="empty">Aucun jugement.</p>'}</div>`}
-function tasks(u){let list=[...S.db.tasks].sort((a,b)=>b.at-a.at);$('view-tasks').innerHTML=`<h2>Tâches</h2><form id="taskForm" class="row"><label>Type<select name="type"><option>Jugement</option><option>Défense d'un client</option><option>Procuration</option><option>Demande d'adoption</option><option>Changement de nom</option></select></label><label>Détails<input name="details" required></label><button class="primary">Ajouter</button></form><div class="list">${list.map(t=>`<div class="item"><div><b>${esc(t.type)}</b><small>${esc(t.details)} · ${esc(t.by)} · ${date(t.at)}</small></div>${can('admin')?`<button class="ghost danger" data-action="deleteTask" data-id="${t.id}">Supprimer</button>`:''}</div>`).join('')||'<p class="empty">Aucune tâche.</p>'}</div>`}
-function admin(){let a=S.db.audit;$('view-admin').innerHTML=`<h2>Administration</h2><div class="grid">${stat('Utilisateurs',S.db.users.length)}${stat('Jugements',S.db.cases.length)}${stat('Tâches',S.db.tasks.length)}${stat('Solde',money(bal()))}</div><div class="toolbar"><button class="primary" data-action="exportData">Exporter JSON</button><button class="ghost" data-modal="import">Importer JSON</button><button class="ghost danger" data-action="resetAll">Reset local</button></div><form id="importForm" class="stack" hidden><label>JSON<textarea name="json" required></textarea></label><button class="primary">Importer</button><p id="importMsg" class="form-msg"></p></form><h3>Audit</h3><div class="list audit">${a.map(x=>`<div class="item"><div><b>${esc(x.action)}</b><small>${esc(x.by)} · ${date(x.at)}</small></div></div>`).join('')||'<p class="empty">Aucun audit.</p>'}</div>`}
-async function inviteFor(u){let c=code();u.inviteSalt=rand(16);u.inviteHash=await hash(c,u.inviteSalt,70000);u.status='pending';u.passHash='';u.salt='';return c}
-function uniqueUsername(v){let n=norm(v);return n&&!S.db.users.some(u=>norm(u.username)===n)}
-async function setup(e){e.preventDefault();if(!secure())return msg('setupMsg','Ouvre la page en HTTPS ou localhost.');let d=fd(e.target);if(d.password!==d.confirm)return msg('setupMsg','Les mots de passe ne correspondent pas.');if(d.password.length<8)return msg('setupMsg','8 caractères minimum.');let p=await pass(d.password);S.db.users.push({id:uid(),username:norm(d.username)||'gerant',prenom:clean(d.prenom),nom:clean(d.nom),grade:'Gérant',role:'admin',status:'active',createdAt:now(),...p});audit('Création du compte gérant');save();e.target.reset();msg('setupMsg','Tribunal créé.',true);render()}
-async function login(e){e.preventDefault();if(!secure())return msg('loginMsg','Ouvre la page en HTTPS ou localhost.');let d=fd(e.target),u=S.db.users.find(x=>norm(x.username)===norm(d.username)&&x.status==='active');if(!u||await hash(d.password,u.salt,u.iterations||ITER)!==u.passHash)return msg('loginMsg','Identifiant ou mot de passe incorrect.');u.lastLoginAt=now();audit('Connexion de '+name(u));session(u);save();e.target.reset();render()}
-async function activate(e){e.preventDefault();if(!secure())return msg('activateMsg','Ouvre la page en HTTPS ou localhost.');let d=fd(e.target),u=S.db.users.find(x=>norm(x.username)===norm(d.username)&&x.status==='pending');if(!u)return msg('activateMsg','Compte introuvable ou déjà activé.');if(await hash(clean(d.invite).toUpperCase(),u.inviteSalt,70000)!==u.inviteHash)return msg('activateMsg','Code incorrect.');if(d.password!==d.confirm)return msg('activateMsg','Les mots de passe ne correspondent pas.');Object.assign(u,await pass(d.password),{status:'active',inviteHash:'',inviteSalt:'',activatedAt:now()});audit('Activation compte '+name(u));save();e.target.reset();msg('activateMsg','Compte activé, connecte-toi.',true);render()}
-async function submit(e){if(e.target.id==='setupForm')return setup(e);if(e.target.id==='loginForm')return login(e);if(e.target.id==='activateForm')return activate(e);if(!user())return;
- if(e.target.id==='memberForm'){e.preventDefault();let d=fd(e.target),username=norm(d.username||`${d.prenom}.${d.nom}`);if(!uniqueUsername(username))return msg('memberMsg','Identifiant déjà utilisé.');let grade=clean(d.grade);let u={id:uid(),username,prenom:clean(d.prenom),nom:clean(d.nom),grade,role:ROLE[grade]||'staff',status:'pending',createdAt:now(),salt:'',passHash:'',iterations:ITER};let c=await inviteFor(u);S.db.users.push(u);S.lastInvite={code:c,for:`${name(u)} · identifiant ${username}`};audit('Invitation créée pour '+name(u));e.target.reset();refresh()}
- if(e.target.id==='treasuryForm'){e.preventDefault();let d=fd(e.target),amt=Math.floor(Math.abs(Number(d.amount)));if(!amt)return msg('treasuryMsg','Montant invalide.');if(d.type==='withdraw'&&!can('withdraw'))return msg('treasuryMsg','Permission refusée.');if(d.type==='withdraw'&&amt>bal())return msg('treasuryMsg','Solde insuffisant.');let u=user(),com=d.type==='deposit'?Math.floor(amt*.1):0;S.db.treasury.push({id:uid(),type:d.type,amount:amt,commission:com,net:d.type==='deposit'?amt-com:amt,note:clean(d.note),memberId:u.id,by:name(u),at:now()});audit((d.type==='deposit'?'Dépôt ':'Retrait ')+money(amt));e.target.reset();refresh()}
- if(e.target.id==='caseForm'){e.preventDefault();if(!can('case'))return;let d=fd(e.target),u=user();S.db.cases.push({id:uid(),title:clean(d.title),day:d.day,accused:clean(d.accused),verdict:clean(d.verdict),judge:clean(d.judge),prosecutor:clean(d.prosecutor),lawyer:clean(d.lawyer),charges:clean(d.charges),notes:clean(d.notes),by:name(u),byId:u.id,at:now()});audit('Jugement créé : '+clean(d.title));e.target.reset();refresh()}
- if(e.target.id==='taskForm'){e.preventDefault();let d=fd(e.target),u=user();S.db.tasks.push({id:uid(),type:clean(d.type),details:clean(d.details),by:name(u),byId:u.id,memberId:u.id,grade:u.grade,at:now()});audit('Tâche ajoutée : '+clean(d.type));e.target.reset();refresh()}
- if(e.target.id==='passwordForm'){e.preventDefault();let d=fd(e.target),u=user();if(await hash(d.old,u.salt,u.iterations||ITER)!==u.passHash)return msg('passwordMsg','Ancien mot de passe incorrect.');if(d.password!==d.confirm)return msg('passwordMsg','Les mots de passe ne correspondent pas.');Object.assign(u,await pass(d.password));audit('Mot de passe changé');e.target.reset();msg('passwordMsg','Mot de passe changé.',true);refresh()}
- if(e.target.id==='importForm'){e.preventDefault();try{let im=JSON.parse(fd(e.target).json);if(!im||im.version!==2||!Array.isArray(im.users))throw 0;S.db=im;audit('Import JSON');refresh()}catch(_){msg('importMsg','JSON invalide.')}}}
-async function click(e){let b=e.target.closest('[data-auth-tab]');if(b){qs('[data-auth-tab]').forEach(x=>x.classList.toggle('on',x===b));$('loginForm').hidden=b.dataset.authTab!=='login';$('activateForm').hidden=b.dataset.authTab!=='activate';return}b=e.target.closest('[data-view]');if(b){S.view=b.dataset.view;return render()}b=e.target.closest('[data-modal]');if(b){let f=$(b.dataset.modal==='password'?'passwordForm':'importForm');if(f)f.hidden=!f.hidden;return}b=e.target.closest('[data-action]');if(!b)return;let id=b.dataset.id,u=S.db.users.find(x=>x.id===id),a=b.dataset.action;if(a==='regenInvite'&&u){let c=await inviteFor(u);S.lastInvite={code:c,for:`${name(u)} · identifiant ${u.username}`};audit('Code régénéré '+name(u));return refresh()}if(a==='resetPass'&&u){let c=await inviteFor(u);S.lastInvite={code:c,for:`${name(u)} · identifiant ${u.username}`};audit('Mot de passe reset '+name(u));return refresh()}if(a==='toggleUser'&&u){if(u.id===user().id)return alert('Impossible de désactiver ton compte.');u.status=u.status==='disabled'?'active':'disabled';audit('Changement statut '+name(u));return refresh()}if(a==='deleteTreasury'&&can('admin')){S.db.treasury=S.db.treasury.filter(x=>x.id!==id);return refresh('Suppression trésorerie')}if(a==='deleteCase'&&can('admin')){S.db.cases=S.db.cases.filter(x=>x.id!==id);return refresh('Suppression jugement')}if(a==='deleteTask'&&can('admin')){S.db.tasks=S.db.tasks.filter(x=>x.id!==id);return refresh('Suppression tâche')}if(a==='exportData'&&can('admin')){let blob=new Blob([JSON.stringify(S.db,null,2)],{type:'application/json'}),l=document.createElement('a');l.href=URL.createObjectURL(blob);l.download='tribunal-suna-export.json';l.click();URL.revokeObjectURL(l.href)}if(a==='resetAll'&&can('admin')&&confirm('Supprimer toutes les données locales ?')){localStorage.removeItem(DB);sessionStorage.removeItem(SES);location.reload()}}
-function input(e){if(e.target.id==='searchUsers'){S.search=e.target.value;members()}}
-function refresh(a){if(a)audit(a);save();render()}
-function theme(){let n=document.documentElement.dataset.theme==='dark'?'light':'dark';document.documentElement.dataset.theme=n;localStorage.setItem(THEME,n)}
-function initTheme(){let t=localStorage.getItem(THEME)||'auto';document.documentElement.dataset.theme=t==='auto'&&matchMedia('(prefers-color-scheme: dark)').matches?'dark':t==='dark'?'dark':'light'}
-document.addEventListener('submit',submit);document.addEventListener('click',click);document.addEventListener('input',input);$('logoutBtn').onclick=()=>{session(null);render()};$('themeBtn').onclick=theme;initTheme();restore();render();
-})();
+const app = document.getElementById('app');
+const toastBox = document.getElementById('toast');
+const state = { user:null, data:null, needsSetup:false, inviteToken:null, invite:null, lastInviteUrl:'', tab:'dashboard', busy:false };
+const roles = ['Gérant','Co-gérant','Magistrat','Greffier','Procureur','Avocat','Auditeur'];
+const $ = (sel, root=document) => root.querySelector(sel);
+const $$ = (sel, root=document) => [...root.querySelectorAll(sel)];
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt = n => (Number(n||0)).toLocaleString('fr-FR') + ' Ryō';
+const date = v => v ? new Date(v).toLocaleDateString('fr-FR') : '—';
+const isManager = () => ['Gérant','Co-gérant'].includes(state.user?.role);
+const isGerant = () => state.user?.role === 'Gérant';
+const canJudge = () => state.user && state.user.role !== 'Auditeur';
+const params = new URLSearchParams(location.search);
+
+function detectInvite(){
+  const m = location.pathname.match(/^\/invite\/([^/]+)/);
+  state.inviteToken = m ? decodeURIComponent(m[1]) : (params.get('invite') || null);
+}
+function toast(msg, ok=true){
+  toastBox.textContent = msg;
+  toastBox.className = 'toast ' + (ok ? 'ok' : 'bad');
+  toastBox.hidden = false;
+  clearTimeout(toastBox._t);
+  toastBox._t = setTimeout(()=>toastBox.hidden=true, 3600);
+}
+async function api(action, options={}){
+  const res = await fetch(`/api?action=${encodeURIComponent(action)}`, {
+    method: options.method || (options.body ? 'POST' : 'GET'),
+    headers: options.body ? {'Content-Type':'application/json'} : {},
+    credentials: 'same-origin',
+    body: options.body ? JSON.stringify(options.body) : undefined
+  });
+  const json = await res.json().catch(()=>({ok:false,message:'Réponse invalide'}));
+  if(!res.ok || json.ok === false) throw new Error(json.message || 'Erreur API');
+  return json;
+}
+async function boot(){
+  detectInvite();
+  try{
+    const setup = await api('setup-status');
+    state.needsSetup = setup.needsSetup;
+    if(state.inviteToken){
+      const inv = await fetch(`/api?action=invite-info&token=${encodeURIComponent(state.inviteToken)}`, {credentials:'same-origin'}).then(r=>r.json());
+      if(inv.ok) state.invite = inv.invite;
+    }
+    const me = await api('me');
+    state.user = me.user;
+    if(state.user) await loadData(); else render();
+  }catch(e){ renderFatal(e.message); }
+}
+async function loadData(){
+  state.data = await api('overview');
+  if(state.data.user) state.user = state.data.user;
+  render();
+}
+function renderFatal(msg){ app.innerHTML = `<section class="card auth"><div class="seal">⚠</div><h1>Configuration requise</h1><p class="muted">${esc(msg)}</p><p class="hint">Ajoute une variable d’environnement <b>DATABASE_URL</b> ou <b>POSTGRES_URL</b> dans Vercel avec ton URL PostgreSQL, puis redéploie.</p></section>`; }
+function page(title, subtitle, body){ return `<section class="card auth"><div class="seal">⚖</div><h1>${esc(title)}</h1><p class="subtitle">${esc(subtitle)}</p>${body}</section>`; }
+function render(){
+  if(state.needsSetup) return renderSetup();
+  if(state.inviteToken && !state.user) return renderInvite();
+  if(!state.user) return renderLogin();
+  renderApp();
+}
+function renderSetup(){
+  app.innerHTML = page('Initialisation', 'Créer le compte gérant principal', `
+    <form data-form="setup" class="form-grid one">
+      <label>Prénom<input name="firstName" required minlength="2" autocomplete="given-name"></label>
+      <label>Nom<input name="lastName" required minlength="2" autocomplete="family-name"></label>
+      <label>Mot de passe gérant<input name="password" type="password" required minlength="8" autocomplete="new-password"></label>
+      <button class="primary">Créer le tribunal</button>
+    </form>
+    <p class="hint">Cette étape est sauvegardée en SQL, donc elle ne disparaît plus au redémarrage.</p>`);
+}
+function renderLogin(){
+  app.innerHTML = page('Connexion', 'Tribunal de Sunagakure', `
+    <form data-form="login" class="form-grid one">
+      <label>Nom ou prénom<input name="login" required autocomplete="username" placeholder="ex: Hanma Senju"></label>
+      <label>Mot de passe<input name="password" type="password" required autocomplete="current-password"></label>
+      <button class="primary">Entrer</button>
+    </form>
+    ${state.inviteToken ? `<p class="hint"><a href="/invite/${encodeURIComponent(state.inviteToken)}">Utiliser l’invitation reçue</a></p>`:''}`);
+}
+function renderInvite(){
+  if(!state.invite) return app.innerHTML = page('Invitation invalide', 'Lien expiré ou déjà utilisé', `<p class="hint">Demande au gérant de générer un nouveau lien.</p><button data-action="go-login" class="ghost wide">Retour connexion</button>`);
+  const i = state.invite;
+  app.innerHTML = page('Invitation', `Grade proposé : ${i.role}`, `
+    <form data-form="accept-invite" class="form-grid one">
+      <label>Prénom<input name="firstName" value="${esc(i.first_name||'')}" ${i.first_name?'readonly':''} required minlength="2"></label>
+      <label>Nom<input name="lastName" value="${esc(i.last_name||'')}" ${i.last_name?'readonly':''} required minlength="2"></label>
+      <label>Mot de passe<input name="password" type="password" required minlength="8" autocomplete="new-password"></label>
+      <button class="primary">Créer mon accès</button>
+    </form>
+    <p class="hint">Lien valable jusqu’au ${date(i.expires_at)}.</p>`);
+}
+function renderApp(){
+  const tabs = [ ['dashboard','Accueil'], ['members','Membres'], ['treasury','Trésorerie'], ['judgments','Jugements'], ['tasks','Tâches'] ];
+  if(isManager()) tabs.push(['invites','Invitations'], ['audit','Audit']);
+  app.className = 'app-shell';
+  app.innerHTML = `
+    <header class="topbar"><div><b>Justice</b><span>Tribunal de Sunagakure</span></div><div class="user"><span>${esc(state.user.name)}</span><small>${esc(state.user.role)}</small><button data-action="logout" class="ghost">Déconnexion</button></div></header>
+    <nav class="tabs">${tabs.map(t=>`<button data-tab="${t[0]}" class="${state.tab===t[0]?'on':''}">${t[1]}</button>`).join('')}</nav>
+    <section class="grid-main">${renderTab()}</section>`;
+}
+function renderTab(){
+  if(!state.data) return `<div class="card">Chargement…</div>`;
+  return ({dashboard:dashboard, members:members, treasury:treasury, judgments:judgments, tasks:tasks, invites:invites, audit:audit}[state.tab] || dashboard)();
+}
+function dashboard(){
+  const d = state.data;
+  return `<div class="card hero"><div><span class="eyebrow">Solde du trésor</span><strong>${fmt(d.balance)}</strong><p>Base SQL active, sessions persistantes, liens d’invitation uniques.</p></div><div class="seal mini">⚖</div></div>
+  <div class="cards3">
+    <div class="card stat"><span>Membres</span><b>${d.users.length}</b></div>
+    <div class="card stat"><span>Jugements</span><b>${d.judgments.length}</b></div>
+    <div class="card stat"><span>Tâches</span><b>${d.tasks.length}</b></div>
+  </div>
+  <div class="card"><h2>Dernières tâches</h2>${list(d.tasks.slice(0,5), x=>`<b>${esc(x.type)}</b><small>${esc(x.details)} · ${esc(x.status)}</small>`)}</div>`;
+}
+function members(){
+  const roleOptions = roles.filter(r=> r !== 'Gérant' && (isGerant() || r !== 'Co-gérant'));
+  return `<div class="card"><h2>Membres</h2>${list(state.data.users, u=>`
+    <b>${esc(u.name)}</b><span class="pill">${esc(u.role)}</span><small>${esc(u.status)} · créé le ${date(u.createdAt)}</small>
+    ${isManager() && u.role!=='Gérant' && u.id!==state.user.id ? `<div class="line-actions"><select data-role-user="${u.id}">${roleOptions.map(r=>`<option ${r===u.role?'selected':''}>${r}</option>`).join('')}</select><button data-action="toggle-user" data-id="${u.id}" data-status="${u.status==='active'?'suspended':'active'}" class="danger">${u.status==='active'?'Suspendre':'Réactiver'}</button></div>`:''}`)}</div>`;
+}
+function invites(){
+  const roleOptions = roles.filter(r=> r !== 'Gérant' && (isGerant() || r !== 'Co-gérant'));
+  return `<div class="card"><h2>Générer un lien d’invitation</h2>
+    ${state.lastInviteUrl ? `<div class="invite-link"><input value="${esc(state.lastInviteUrl)}" readonly><button type="button" data-copy="${esc(state.lastInviteUrl)}">Copier</button></div>`:''}
+    <form data-form="create-invite" class="form-grid">
+      <label>Grade<select name="role">${roleOptions.map(r=>`<option>${r}</option>`).join('')}</select></label>
+      <label>Prénom facultatif<input name="firstName"></label><label>Nom facultatif<input name="lastName"></label>
+      <label>Expire dans<select name="days"><option>1</option><option selected>7</option><option>14</option><option>30</option></select></label>
+      <label class="full">Note interne<input name="note" placeholder="Ex: recrutement avocat"></label><button class="primary">Générer le lien</button>
+    </form><div id="inviteResult"></div></div>
+    <div class="card"><h2>Invitations</h2>${list(state.data.invites, i=>`<b>${esc(i.role)}</b><small>${esc([i.first_name,i.last_name].filter(Boolean).join(' ')||'Nom libre')} · expire ${date(i.expires_at)} · ${i.used_at?'utilisée':i.revoked_at?'révoquée':'active'}</small>${!i.used_at&&!i.revoked_at?`<button data-action="revoke-invite" data-id="${i.id}" class="danger">Révoquer</button>`:''}`)}</div>`;
+}
+function treasury(){
+  return `<div class="card"><h2>Trésorerie</h2><p class="big-money">${fmt(state.data.balance)}</p><form data-form="treasury" class="form-grid"><label>Type<select name="type"><option value="depot">Dépôt</option>${isManager()?'<option value="retrait">Retrait</option>':''}</select></label><label>Montant<input name="amount" type="number" min="1" required></label><label class="full">Motif<input name="note"></label><button class="primary">Enregistrer</button></form></div>
+  <div class="card"><h2>Historique</h2>${list(state.data.treasury, x=>`<b class="${x.type==='depot'?'pos':'neg'}">${x.type==='depot'?'+':'−'}${fmt(x.amount)}</b><small>${esc(x.note||'Sans motif')} · ${esc(x.author)} · ${date(x.created_at)}${x.commission?` · paye ${fmt(x.commission)}`:''}</small>`)}</div>`;
+}
+function judgments(){
+  return `${canJudge()?`<div class="card"><h2>Nouveau jugement</h2><form data-form="judgment" class="form-grid"><label>Affaire<input name="title" required></label><label>Date<input name="day" type="date"></label><label>Accusé<input name="accused" required></label><label>Juge<input name="judge" value="${esc(state.user.name)}"></label><label>Avocat<input name="lawyer"></label><label>Procureur<input name="prosecutor"></label><label>Verdict<select name="verdict"><option>En cours</option><option>Coupable</option><option>Non coupable</option><option>Relaxé</option><option>Renvoyé</option></select></label><label>Charges<input name="charges"></label><label class="full">Notes<textarea name="notes" rows="3"></textarea></label><button class="primary">Créer</button></form></div>`:''}
+  <div class="card"><h2>Jugements</h2>${list(state.data.judgments, j=>`<b>${esc(j.title)}</b><span class="pill">${esc(j.verdict)}</span><small>${date(j.day)} · accusé ${esc(j.accused)} · juge ${esc(j.judge||'—')}</small>${j.notes?`<small>${esc(j.notes)}</small>`:''}`)}</div>`;
+}
+function tasks(){
+  return `<div class="card"><h2>Nouvelle tâche</h2><form data-form="task" class="form-grid"><label>Type<select name="type"><option>Jugement</option><option>Défense d'un client</option><option>Procuration</option><option>Demande d'adoption</option><option>Changement de nom</option><option>Administration</option></select></label>${isManager()?`<label>Assignée à<select name="assignedTo"><option value="">Moi</option>${state.data.users.filter(u=>u.status==='active').map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join('')}</select></label>`:''}<label class="full">Détails<input name="details" required></label><button class="primary">Ajouter</button></form></div>
+  <div class="card"><h2>Tâches</h2>${list(state.data.tasks, t=>`<b>${esc(t.type)}</b><span class="pill">${esc(t.status)}</span><small>${esc(t.details)} · assigné à ${esc(t.assigned_name)} · ${date(t.created_at)}</small><div class="line-actions"><button data-action="task-status" data-id="${t.id}" data-status="En cours" class="ghost">En cours</button><button data-action="task-status" data-id="${t.id}" data-status="Terminé" class="ghost">Terminé</button></div>`)}</div>`;
+}
+function audit(){
+  return `<div class="card"><h2>Audit</h2><button data-action="export" class="ghost">Exporter JSON</button>${list(state.data.audit, a=>`<b>${esc(a.action)}</b><small>${esc(a.actor)} · ${esc(a.entity)} · ${date(a.created_at)}</small>`)}</div>`;
+}
+function list(items, render){ return items?.length ? `<div class="list">${items.map(x=>`<article class="row-item">${render(x)}</article>`).join('')}</div>` : `<p class="empty">Aucune donnée.</p>`; }
+
+function data(form){ return Object.fromEntries(new FormData(form).entries()); }
+app.addEventListener('submit', async e=>{
+  const form = e.target.closest('form[data-form]'); if(!form) return; e.preventDefault();
+  const name = form.dataset.form; const d = data(form);
+  try{
+    if(name==='setup'){ await api('setup', { body:d }); state.needsSetup=false; toast('Tribunal initialisé. Connecte-toi.'); renderLogin(); return; }
+    if(name==='login'){ const r = await api('login', { body:d }); state.user=r.user; await loadData(); toast('Connecté.'); return; }
+    if(name==='accept-invite'){ await api('accept-invite', { body:{...d, token:state.inviteToken} }); history.replaceState(null,'','/'); state.inviteToken=null; toast('Compte créé. Connecte-toi.'); renderLogin(); return; }
+    if(name==='create-invite'){ const r = await api('create-invite', { body:d }); state.lastInviteUrl = r.invite.url; await loadData(); toast('Lien généré.'); return; }
+    const map = { treasury:'create-treasury', judgment:'create-judgment', task:'create-task' };
+    if(map[name]){ await api(map[name], { body:d }); form.reset(); await loadData(); toast('Enregistré.'); }
+  }catch(err){ toast(err.message, false); }
+});
+app.addEventListener('click', async e=>{
+  const tab = e.target.closest('[data-tab]'); if(tab){ state.tab = tab.dataset.tab; renderApp(); return; }
+  const copy = e.target.closest('[data-copy]'); if(copy){ await navigator.clipboard.writeText(copy.dataset.copy); toast('Lien copié.'); return; }
+  const b = e.target.closest('[data-action]'); if(!b) return;
+  try{
+    if(b.dataset.action==='logout'){ await api('logout', { body:{} }); state.user=null; state.data=null; renderLogin(); return; }
+    if(b.dataset.action==='go-login'){ history.replaceState(null,'','/'); state.inviteToken=null; renderLogin(); return; }
+    if(b.dataset.action==='revoke-invite'){ await api('revoke-invite', { body:{id:b.dataset.id} }); await loadData(); return; }
+    if(b.dataset.action==='toggle-user'){ await api('set-user-status', { body:{id:b.dataset.id,status:b.dataset.status} }); await loadData(); return; }
+    if(b.dataset.action==='task-status'){ await api('task-status', { body:{id:b.dataset.id,status:b.dataset.status} }); await loadData(); return; }
+    if(b.dataset.action==='export'){ const r = await api('export', { body:{} }); const blob = new Blob([JSON.stringify(r.data,null,2)], {type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='tribunal-suna-export.json'; a.click(); URL.revokeObjectURL(a.href); }
+  }catch(err){ toast(err.message, false); }
+});
+app.addEventListener('change', async e=>{
+  const sel = e.target.closest('[data-role-user]'); if(!sel) return;
+  try{ await api('update-role', { body:{id:sel.dataset.roleUser, role:sel.value} }); await loadData(); toast('Grade modifié.'); }catch(err){ toast(err.message,false); }
+});
+boot();
