@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="fr" data-theme="auto">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#b47a25">
+  <title>Tribunal de Suna — Justice</title>
+  <link rel="stylesheet" href="assets/styles.css">
+  <script defer src="assets/app.js"></script>
+</head>
+<body>
+  <noscript>Active JavaScript pour utiliser le tribunal.</noscript>
+
+  <section id="authScreen" class="auth-shell" aria-live="polite">
+    <div class="auth-card card">
+      <div class="seal" aria-hidden="true">⚖</div>
+      <p class="eyebrow">Tribunal de Sunagakure</p>
+      <h1>Justice</h1>
+      <p class="muted center" id="authIntro">Connexion sécurisée au registre du tribunal.</p>
+
+      <div id="setupPanel" hidden>
+        <h2>Premier démarrage</h2>
+        <p class="muted">Crée le compte gérant. Le mot de passe sera protégé avec PBKDF2 + sel unique.</p>
+        <form id="setupForm" autocomplete="off" class="stack">
+          <label>Identifiant gérant<input name="username" required minlength="3" maxlength="32" placeholder="gerant"></label>
+          <label>Prénom<input name="prenom" required placeholder="Prénom RP"></label>
+          <label>Nom<input name="nom" required placeholder="Nom RP"></label>
+          <label>Mot de passe<input name="password" type="password" required minlength="8" autocomplete="new-password"></label>
+          <label>Confirmer<input name="confirm" type="password" required minlength="8" autocomplete="new-password"></label>
+          <button class="primary" type="submit">Créer le tribunal</button>
+          <p id="setupMsg" class="form-msg" role="alert"></p>
+        </form>
+      </div>
+
+      <div id="loginPanel">
+        <div class="segmented" role="tablist" aria-label="Connexion">
+          <button type="button" class="seg on" data-auth-tab="login">Connexion</button>
+          <button type="button" class="seg" data-auth-tab="activate">Créer mon sceau</button>
+        </div>
+
+        <form id="loginForm" class="stack" autocomplete="off">
+          <label>Identifiant<input name="username" required autocomplete="username" placeholder="ex : yuma.senju"></label>
+          <label>Mot de passe<input name="password" type="password" required autocomplete="current-password"></label>
+          <button class="primary" type="submit">Se connecter</button>
+          <p id="loginMsg" class="form-msg" role="alert"></p>
+        </form>
+
+        <form id="activateForm" class="stack" autocomplete="off" hidden>
+          <label>Identifiant donné par le gérant<input name="username" required placeholder="ex : yuma.senju"></label>
+          <label>Code d’invitation<input name="invite" required placeholder="XXXX-XXXX-XXXX"></label>
+          <label>Nouveau mot de passe<input name="password" type="password" required minlength="8" autocomplete="new-password"></label>
+          <label>Confirmer<input name="confirm" type="password" required minlength="8" autocomplete="new-password"></label>
+          <button class="primary" type="submit">Activer mon compte</button>
+          <p id="activateMsg" class="form-msg" role="alert"></p>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <div id="app" hidden>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-icon">⚖</span>
+        <div><strong>Tribunal de Suna</strong><small>Registre officiel</small></div>
+      </div>
+      <div class="top-actions">
+        <button id="themeBtn" class="ghost" type="button">Thème</button>
+        <span id="sessionBadge" class="session-badge"></span>
+        <button id="logoutBtn" class="ghost danger" type="button">Déconnexion</button>
+      </div>
+    </header>
+
+    <nav id="tabs" class="tabs" aria-label="Navigation"></nav>
+
+    <main class="layout">
+      <section id="view-dashboard" class="view card"></section>
+      <section id="view-members" class="view card" hidden></section>
+      <section id="view-treasury" class="view card" hidden></section>
+      <section id="view-cases" class="view card" hidden></section>
+      <section id="view-tasks" class="view card" hidden></section>
+      <section id="view-admin" class="view card" hidden></section>
+    </main>
+  </div>
+
+  <template id="emptyTpl"><p class="empty">Aucune donnée pour le moment.</p></template>
+</body>
+</html>
